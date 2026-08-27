@@ -11,7 +11,7 @@ Reference a tagged release to keep module updates predictable:
 
 ```tf
 module "opencode" {
-  source = "git::https://github.com/fdobrovolny/coder-opencode.git?ref=v1.2.0"
+  source = "git::https://github.com/fdobrovolny/coder-opencode.git?ref=v1.2.1"
 
   agent_id = coder_agent.main.id
   workdir  = "/home/coder/project"
@@ -24,7 +24,7 @@ OpenCode can use credentials already present in the workspace. For non-interacti
 
 ```tf
 module "opencode" {
-  source = "git::https://github.com/fdobrovolny/coder-opencode.git?ref=v1.2.0"
+  source = "git::https://github.com/fdobrovolny/coder-opencode.git?ref=v1.2.1"
 
   agent_id = coder_agent.main.id
   workdir  = "/home/coder/project"
@@ -42,7 +42,7 @@ Provide an OpenCode configuration as JSON when the workspace should be configure
 
 ```tf
 module "opencode" {
-  source = "git::https://github.com/fdobrovolny/coder-opencode.git?ref=v1.2.0"
+  source = "git::https://github.com/fdobrovolny/coder-opencode.git?ref=v1.2.1"
 
   agent_id = coder_agent.main.id
   workdir  = "/home/coder/project"
@@ -65,7 +65,7 @@ To install OpenCode with only the terminal app, disable the web app and server:
 
 ```tf
 module "opencode" {
-  source = "git::https://github.com/fdobrovolny/coder-opencode.git?ref=v1.2.0"
+  source = "git::https://github.com/fdobrovolny/coder-opencode.git?ref=v1.2.1"
 
   agent_id   = coder_agent.main.id
   workdir    = "/home/coder/project"

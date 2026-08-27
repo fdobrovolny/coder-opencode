@@ -46,6 +46,11 @@ run "defaults_are_correct" {
   }
 
   assert {
+    condition     = coder_app.web[0].open_in == "tab"
+    error_message = "The web app should open in a new browser tab."
+  }
+
+  assert {
     condition     = coder_app.tui.display_name == "OpenCode TUI"
     error_message = "The default terminal app display name should be OpenCode TUI."
   }

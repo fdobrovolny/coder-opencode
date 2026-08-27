@@ -168,6 +168,7 @@ resource "coder_app" "web" {
   share        = "owner"
   order        = var.order
   group        = var.group
+  open_in      = "tab"
 
   healthcheck {
     url       = "http://localhost:${var.web_port}"
