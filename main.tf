@@ -50,6 +50,12 @@ variable "web_app_display_name" {
   default     = "OpenCode Web"
 }
 
+variable "enable_web" {
+  description = "Whether to create the OpenCode web app and start its server."
+  type        = bool
+  default     = true
+}
+
 variable "tui_app_display_name" {
   description = "Display name for the OpenCode terminal app."
   type        = string
@@ -68,9 +74,14 @@ variable "web_port" {
 }
 
 variable "subdomain" {
-  description = "Whether the OpenCode web app uses a subdomain instead of a path."
+  description = "Whether the OpenCode web app uses a subdomain. OpenCode requires subdomain mode because it does not support path-prefixed URLs."
   type        = bool
-  default     = false
+  default     = true
+
+  validation {
+    condition     = !var.enable_web || var.subdomain
+    error_message = "subdomain must be true because OpenCode uses root-relative asset, API, and WebSocket URLs. Configure Coder's wildcard access URL."
+  }
 }
 
 variable "pre_install_script" {
@@ -119,10 +130,10 @@ locals {
     ARG_AUTH_JSON        = base64encode(var.auth_json)
     ARG_OPENCODE_CONFIG  = base64encode(var.config_json)
   })
-  start_script = templatefile("${path.module}/scripts/start.sh.tftpl", {
+  start_script = var.enable_web ? templatefile("${path.module}/scripts/start.sh.tftpl", {
     ARG_WORKDIR  = base64encode(local.workdir)
     ARG_WEB_PORT = tostring(var.web_port)
-  })
+  }) : null
 }
 
 module "coder_utils" {
@@ -139,7 +150,15 @@ module "coder_utils" {
   start_script        = local.start_script
 }
 
+moved {
+  from = coder_app.web
+  to   = coder_app.web[0]
+}
+
+# OpenCode uses root-relative routes and cannot run behind Coder's path-based app proxy.
 resource "coder_app" "web" {
+  count = var.enable_web ? 1 : 0
+
   agent_id     = var.agent_id
   slug         = "opencode-web"
   display_name = var.web_app_display_name

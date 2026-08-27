@@ -11,7 +11,7 @@ Reference a tagged release to keep module updates predictable:
 
 ```tf
 module "opencode" {
-  source = "git::https://github.com/fdobrovolny/coder-opencode.git?ref=v1.0.0"
+  source = "git::https://github.com/fdobrovolny/coder-opencode.git?ref=v1.1.0"
 
   agent_id = coder_agent.main.id
   workdir  = "/home/coder/project"
@@ -24,7 +24,7 @@ OpenCode can use credentials already present in the workspace. For non-interacti
 
 ```tf
 module "opencode" {
-  source = "git::https://github.com/fdobrovolny/coder-opencode.git?ref=v1.0.0"
+  source = "git::https://github.com/fdobrovolny/coder-opencode.git?ref=v1.1.0"
 
   agent_id = coder_agent.main.id
   workdir  = "/home/coder/project"
@@ -40,7 +40,7 @@ Provide an OpenCode configuration as JSON when the workspace should be configure
 
 ```tf
 module "opencode" {
-  source = "git::https://github.com/fdobrovolny/coder-opencode.git?ref=v1.0.0"
+  source = "git::https://github.com/fdobrovolny/coder-opencode.git?ref=v1.1.0"
 
   agent_id = coder_agent.main.id
   workdir  = "/home/coder/project"
@@ -53,6 +53,23 @@ module "opencode" {
 ```
 
 The web server listens only on the workspace loopback interface and the Coder app is owner-only. Its default port is `4096`.
+
+The module uses `opencode serve` so the headless workspace does not attempt to launch `xdg-open` when the server starts.
+
+> [!IMPORTANT]
+> OpenCode requires Coder's [wildcard access URL](https://coder.com/docs/admin/networking/wildcard-access-url). Its frontend uses root-relative asset, API, and WebSocket URLs, which are not compatible with Coder's path-based app proxy. The module therefore requires `subdomain = true`.
+
+To install OpenCode with only the terminal app, disable the web app and server:
+
+```tf
+module "opencode" {
+  source = "git::https://github.com/fdobrovolny/coder-opencode.git?ref=v1.1.0"
+
+  agent_id   = coder_agent.main.id
+  workdir    = "/home/coder/project"
+  enable_web = false
+}
+```
 
 ## Install Pipeline
 

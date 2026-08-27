@@ -26,18 +26,23 @@ run "defaults_are_correct" {
   }
 
   assert {
-    condition     = coder_app.web.display_name == "OpenCode Web"
+    condition     = coder_app.web[0].display_name == "OpenCode Web"
     error_message = "The default web app display name should be OpenCode Web."
   }
 
   assert {
-    condition     = coder_app.web.url == "http://localhost:4096"
+    condition     = coder_app.web[0].url == "http://localhost:4096"
     error_message = "The web app should use the default OpenCode port."
   }
 
   assert {
-    condition     = coder_app.web.share == "owner"
+    condition     = coder_app.web[0].share == "owner"
     error_message = "The web app should only be shared with the workspace owner."
+  }
+
+  assert {
+    condition     = coder_app.web[0].subdomain
+    error_message = "The web app should use a subdomain because OpenCode does not support path-prefixed URLs."
   }
 
   assert {
@@ -56,8 +61,13 @@ run "defaults_are_correct" {
   }
 
   assert {
-    condition     = strcontains(local.start_script, "opencode web --hostname 127.0.0.1 --port")
-    error_message = "The start script should launch the OpenCode web server on loopback."
+    condition     = strcontains(local.start_script, "opencode serve --hostname 127.0.0.1 --port")
+    error_message = "The start script should launch OpenCode without opening a local browser."
+  }
+
+  assert {
+    condition     = !strcontains(local.start_script, "opencode web")
+    error_message = "The start script should not use the browser-opening web command."
   }
 
   assert {
@@ -92,17 +102,17 @@ run "custom_app_configuration" {
   }
 
   assert {
-    condition     = coder_app.web.url == "http://localhost:8080"
+    condition     = coder_app.web[0].url == "http://localhost:8080"
     error_message = "The web app should use the configured port."
   }
 
   assert {
-    condition     = coder_app.web.display_name == "OpenCode Browser" && coder_app.tui.display_name == "OpenCode Terminal"
+    condition     = coder_app.web[0].display_name == "OpenCode Browser" && coder_app.tui.display_name == "OpenCode Terminal"
     error_message = "Both app display names should be configurable."
   }
 
   assert {
-    condition     = coder_app.web.subdomain && coder_app.web.order == 10 && coder_app.web.group == "AI Tools"
+    condition     = coder_app.web[0].subdomain && coder_app.web[0].order == 10 && coder_app.web[0].group == "AI Tools"
     error_message = "The web app should use the configured UI options."
   }
 
@@ -161,4 +171,42 @@ run "empty_workdir" {
   }
 
   expect_failures = [var.workdir]
+}
+
+run "path_based_proxy_is_rejected" {
+  command = plan
+
+  variables {
+    agent_id  = "test-agent"
+    workdir   = "/home/coder/project"
+    subdomain = false
+  }
+
+  expect_failures = [var.subdomain]
+}
+
+run "web_can_be_disabled" {
+  command = plan
+
+  variables {
+    agent_id   = "test-agent"
+    workdir    = "/home/coder/project"
+    enable_web = false
+    subdomain  = false
+  }
+
+  assert {
+    condition     = length(coder_app.web) == 0
+    error_message = "The web app should not be created when web support is disabled."
+  }
+
+  assert {
+    condition     = local.start_script == null
+    error_message = "The start script should not be rendered when web support is disabled."
+  }
+
+  assert {
+    condition     = length(module.coder_utils.scripts) == 1
+    error_message = "Only the install script should run when web support is disabled."
+  }
 }
