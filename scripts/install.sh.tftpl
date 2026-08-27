@@ -1,0 +1,40 @@
+#!/bin/bash
+# Derived from Coder Registry's coder-labs/opencode module and modified for this repository.
+set -euo pipefail
+
+ARG_INSTALL_OPENCODE='${ARG_INSTALL_OPENCODE}'
+ARG_OPENCODE_VERSION='${ARG_OPENCODE_VERSION}'
+ARG_WORKDIR=$(echo -n '${ARG_WORKDIR}' | base64 -d)
+ARG_AUTH_JSON=$(echo -n '${ARG_AUTH_JSON}' | base64 -d)
+ARG_OPENCODE_CONFIG=$(echo -n '${ARG_OPENCODE_CONFIG}' | base64 -d)
+
+export PATH="$${HOME}/.opencode/bin:$${PATH}"
+
+if [ "$${ARG_INSTALL_OPENCODE}" = "true" ] && ! command -v opencode > /dev/null 2>&1; then
+  printf 'Installing OpenCode %s...\n' "$${ARG_OPENCODE_VERSION}"
+  if [ "$${ARG_OPENCODE_VERSION}" = "latest" ]; then
+    curl -fsSL https://opencode.ai/install | bash
+  else
+    curl -fsSL https://opencode.ai/install | VERSION="$${ARG_OPENCODE_VERSION}" bash
+  fi
+fi
+
+if ! command -v opencode > /dev/null 2>&1; then
+  echo "ERROR: OpenCode is not installed. Set install_opencode to true or install it in pre_install_script." >&2
+  exit 1
+fi
+
+mkdir -p "$${ARG_WORKDIR}"
+
+if [ -n "$${ARG_AUTH_JSON}" ]; then
+  mkdir -p "$${HOME}/.local/share/opencode"
+  printf '%s\n' "$${ARG_AUTH_JSON}" > "$${HOME}/.local/share/opencode/auth.json"
+  chmod 600 "$${HOME}/.local/share/opencode/auth.json"
+fi
+
+if [ -n "$${ARG_OPENCODE_CONFIG}" ]; then
+  mkdir -p "$${HOME}/.config/opencode"
+  printf '%s\n' "$${ARG_OPENCODE_CONFIG}" > "$${HOME}/.config/opencode/opencode.json"
+fi
+
+opencode --version

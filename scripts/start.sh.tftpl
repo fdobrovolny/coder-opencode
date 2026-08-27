@@ -1,0 +1,11 @@
+#!/bin/bash
+# Derived from Coder Registry's coder-labs/opencode module and modified for this repository.
+set -euo pipefail
+
+ARG_WORKDIR=$(echo -n '${ARG_WORKDIR}' | base64 -d)
+ARG_WEB_PORT='${ARG_WEB_PORT}'
+
+export PATH="$${HOME}/.opencode/bin:$${PATH}"
+cd "$${ARG_WORKDIR}"
+
+exec opencode web --hostname 127.0.0.1 --port "$${ARG_WEB_PORT}"
