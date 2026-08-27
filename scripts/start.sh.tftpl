@@ -8,4 +8,43 @@ ARG_WEB_PORT='${ARG_WEB_PORT}'
 export PATH="$${HOME}/.opencode/bin:$${PATH}"
 cd "$${ARG_WORKDIR}"
 
-exec opencode serve --hostname 127.0.0.1 --port "$${ARG_WEB_PORT}"
+MODULE_DIR="$${HOME}/.coder-modules/fdobrovolny/opencode"
+SERVER_LOG="$${MODULE_DIR}/logs/server.log"
+SERVER_URL="http://127.0.0.1:$${ARG_WEB_PORT}"
+mkdir -p "$${MODULE_DIR}/logs"
+
+server_ready() {
+  curl -sS -o /dev/null --max-time 1 "$${SERVER_URL}/global/health" 2> /dev/null
+}
+
+if server_ready; then
+  echo "OpenCode server is already running at $${SERVER_URL}."
+  exit 0
+fi
+
+nohup opencode serve --hostname 127.0.0.1 --port "$${ARG_WEB_PORT}" >> "$${SERVER_LOG}" 2>&1 &
+SERVER_PID=$!
+
+for _ in {1..30}; do
+  if server_ready; then
+    echo "OpenCode server started with PID $${SERVER_PID}. Logs: $${SERVER_LOG}"
+    exit 0
+  fi
+
+  if ! kill -0 "$${SERVER_PID}" 2> /dev/null; then
+    if wait "$${SERVER_PID}"; then
+      status=0
+    else
+      status=$?
+    fi
+    echo "ERROR: OpenCode server exited with status $${status}. Check $${SERVER_LOG}." >&2
+    exit 1
+  fi
+
+  sleep 1
+done
+
+kill "$${SERVER_PID}" 2> /dev/null || true
+wait "$${SERVER_PID}" 2> /dev/null || true
+echo "ERROR: OpenCode server did not become ready within 30 seconds. Check $${SERVER_LOG}." >&2
+exit 1

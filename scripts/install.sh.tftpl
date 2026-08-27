@@ -24,6 +24,11 @@ if ! command -v opencode > /dev/null 2>&1; then
   exit 1
 fi
 
+if [ -n "$${CODER_SCRIPT_BIN_DIR:-}" ]; then
+  mkdir -p "$${CODER_SCRIPT_BIN_DIR}"
+  ln -sf "$(command -v opencode)" "$${CODER_SCRIPT_BIN_DIR}/opencode"
+fi
+
 mkdir -p "$${ARG_WORKDIR}"
 
 if [ -n "$${ARG_AUTH_JSON}" ]; then

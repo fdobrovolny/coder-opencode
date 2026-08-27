@@ -66,6 +66,16 @@ run "defaults_are_correct" {
   }
 
   assert {
+    condition     = strcontains(local.start_script, "nohup opencode serve") && strcontains(local.start_script, "SERVER_PID=$!")
+    error_message = "The start script should run the OpenCode server in the background."
+  }
+
+  assert {
+    condition     = strcontains(local.start_script, "/global/health") && strcontains(local.start_script, "server is already running")
+    error_message = "The start script should check readiness and avoid duplicate servers."
+  }
+
+  assert {
     condition     = !strcontains(local.start_script, "opencode web")
     error_message = "The start script should not use the browser-opening web command."
   }
@@ -147,6 +157,11 @@ run "custom_install_configuration" {
   assert {
     condition     = strcontains(nonsensitive(local.install_script), base64encode("/workspace/project"))
     error_message = "The install script should receive the encoded workdir."
+  }
+
+  assert {
+    condition     = strcontains(nonsensitive(local.install_script), "CODER_SCRIPT_BIN_DIR") && strcontains(nonsensitive(local.install_script), "ln -sf")
+    error_message = "The install script should expose OpenCode through Coder's terminal PATH."
   }
 }
 
