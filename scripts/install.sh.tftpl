@@ -1,8 +1,10 @@
 #!/bin/bash
 # Derived from Coder Registry's coder-labs/opencode module and modified for this repository.
 set -euo pipefail
+umask 077
 
 ARG_INSTALL_OPENCODE='${ARG_INSTALL_OPENCODE}'
+ARG_UPDATE_ON_START='${ARG_UPDATE_ON_START}'
 ARG_OPENCODE_VERSION='${ARG_OPENCODE_VERSION}'
 ARG_WORKDIR=$(echo -n '${ARG_WORKDIR}' | base64 -d)
 ARG_AUTH_JSON=$(echo -n '${ARG_AUTH_JSON}' | base64 -d)
@@ -10,18 +12,46 @@ ARG_OPENCODE_CONFIG=$(echo -n '${ARG_OPENCODE_CONFIG}' | base64 -d)
 
 export PATH="$${HOME}/.opencode/bin:$${PATH}"
 
-if [ "$${ARG_INSTALL_OPENCODE}" = "true" ] && ! command -v opencode > /dev/null 2>&1; then
+# Upgrade existing v1 installations; honor an explicit version on reused workspaces.
+INSTALLED_VERSION=""
+if command -v opencode > /dev/null 2>&1; then
+  INSTALLED_VERSION=$(opencode --version)
+  INSTALLED_VERSION="$${INSTALLED_VERSION##* }"
+  INSTALLED_VERSION="$${INSTALLED_VERSION#v}"
+fi
+REQUESTED_VERSION="$${ARG_OPENCODE_VERSION#v}"
+if [ "$${ARG_INSTALL_OPENCODE}" = "true" ] && {
+  [ -z "$${INSTALLED_VERSION}" ] ||
+  [[ "$${INSTALLED_VERSION}" == 1.* ]] ||
+  { [ "$${ARG_UPDATE_ON_START}" = "true" ] && [ "$${REQUESTED_VERSION}" = "latest" ]; } ||
+  { [ "$${REQUESTED_VERSION}" != "latest" ] && [ "$${INSTALLED_VERSION}" != "$${REQUESTED_VERSION}" ]; }
+}; then
   printf 'Installing OpenCode %s...\n' "$${ARG_OPENCODE_VERSION}"
   if [ "$${ARG_OPENCODE_VERSION}" = "latest" ]; then
-    curl -fsSL https://opencode.ai/install | bash
+    curl -fsSL https://opencode.ai/v2/install | bash -s -- --no-modify-path
   else
-    curl -fsSL https://opencode.ai/install | VERSION="$${ARG_OPENCODE_VERSION}" bash
+    curl -fsSL https://opencode.ai/v2/install | bash -s -- --no-modify-path --version "$${ARG_OPENCODE_VERSION}"
   fi
+  hash -r
 fi
 
 if ! command -v opencode > /dev/null 2>&1; then
   echo "ERROR: OpenCode is not installed. Set install_opencode to true or install it in pre_install_script." >&2
   exit 1
+fi
+
+CURRENT_VERSION=$(opencode --version)
+CURRENT_VERSION="$${CURRENT_VERSION##* }"
+CURRENT_VERSION="$${CURRENT_VERSION#v}"
+if [[ ! "$${CURRENT_VERSION}" =~ ^([2-9]|[1-9][0-9]+)\. ]] || ! opencode service --help > /dev/null 2>&1; then
+  echo "ERROR: This module requires OpenCode v2. Upgrade OpenCode or enable installation with opencode_version = latest." >&2
+  exit 1
+fi
+
+# A service can survive an agent restart. Do not leave it running the old binary.
+# The startup script (or the next terminal client) will start the new version.
+if [ -n "$${INSTALLED_VERSION}" ] && [ "$${CURRENT_VERSION}" != "$${INSTALLED_VERSION}" ]; then
+  opencode service stop
 fi
 
 if [ -n "$${CODER_SCRIPT_BIN_DIR:-}" ]; then

@@ -16,6 +16,11 @@ run "defaults_are_correct" {
   }
 
   assert {
+    condition     = !var.update_on_start
+    error_message = "Automatic updates should be disabled by default."
+  }
+
+  assert {
     condition     = var.opencode_version == "latest"
     error_message = "The default OpenCode version should be latest."
   }
@@ -66,23 +71,18 @@ run "defaults_are_correct" {
   }
 
   assert {
-    condition     = strcontains(local.start_script, "opencode serve --hostname 127.0.0.1 --port")
-    error_message = "The start script should launch OpenCode without opening a local browser."
+    condition     = strcontains(local.start_script, "opencode service start") && !strcontains(local.start_script, "nohup")
+    error_message = "OpenCode should manage its background service and credentials."
   }
 
   assert {
-    condition     = strcontains(local.start_script, "nohup opencode serve") && strcontains(local.start_script, "SERVER_PID=$!")
-    error_message = "The start script should run the OpenCode server in the background."
+    condition     = strcontains(local.start_script, "GET /api/info") && !strcontains(local.start_script, "$${SERVER_URL}/global/health")
+    error_message = "Readiness should check the authenticated v2 API."
   }
 
   assert {
-    condition     = strcontains(local.start_script, "/global/health") && strcontains(local.start_script, "server is already running")
-    error_message = "The start script should check readiness and avoid duplicate servers."
-  }
-
-  assert {
-    condition     = !strcontains(local.start_script, "opencode web")
-    error_message = "The start script should not use the browser-opening web command."
+    condition     = strcontains(coder_app.tui.command, "--server http://127.0.0.1:4096") && strcontains(coder_app.tui.command, "opencode service get password")
+    error_message = "The terminal should authenticate to the workspace web service."
   }
 
   assert {
@@ -122,6 +122,11 @@ run "custom_app_configuration" {
   }
 
   assert {
+    condition     = strcontains(coder_app.tui.command, "--server http://127.0.0.1:8080") && strcontains(local.start_script, "ARG_WEB_PORT='8080'")
+    error_message = "The terminal and service should use the configured port."
+  }
+
+  assert {
     condition     = coder_app.web[0].display_name == "OpenCode Browser" && coder_app.tui.display_name == "OpenCode Terminal"
     error_message = "Both app display names should be configurable."
   }
@@ -144,7 +149,7 @@ run "custom_install_configuration" {
     agent_id         = "test-agent"
     workdir          = "/workspace/project"
     install_opencode = false
-    opencode_version = "1.2.3"
+    opencode_version = "2.0.18"
     auth_json        = jsonencode({ provider = { type = "api", key = "secret" } })
     config_json      = jsonencode({ model = "anthropic/claude-sonnet-4" })
   }
@@ -155,13 +160,18 @@ run "custom_install_configuration" {
   }
 
   assert {
-    condition     = strcontains(nonsensitive(local.install_script), "ARG_OPENCODE_VERSION='1.2.3'")
+    condition     = strcontains(nonsensitive(local.install_script), "ARG_OPENCODE_VERSION='2.0.18'")
     error_message = "The install script should receive the configured version."
   }
 
   assert {
     condition     = strcontains(nonsensitive(local.install_script), base64encode("/workspace/project"))
     error_message = "The install script should receive the encoded workdir."
+  }
+
+  assert {
+    condition     = strcontains(nonsensitive(local.install_script), "https://opencode.ai/v2/install")
+    error_message = "Installation must use the v2 installer, not the legacy v1 release channel."
   }
 
   assert {
@@ -221,6 +231,11 @@ run "web_can_be_disabled" {
   }
 
   assert {
+    condition     = !strcontains(coder_app.tui.command, "--server") && !strcontains(coder_app.tui.command, "OPENCODE_PASSWORD")
+    error_message = "Terminal-only mode should use native OpenCode service discovery."
+  }
+
+  assert {
     condition     = local.start_script == null
     error_message = "The start script should not be rendered when web support is disabled."
   }
@@ -228,5 +243,20 @@ run "web_can_be_disabled" {
   assert {
     condition     = length(module.coder_utils.scripts) == 1
     error_message = "Only the install script should run when web support is disabled."
+  }
+}
+
+run "automatic_updates_can_be_enabled" {
+  command = plan
+
+  variables {
+    agent_id        = "test-agent"
+    workdir         = "/home/coder/project"
+    update_on_start = true
+  }
+
+  assert {
+    condition     = strcontains(nonsensitive(local.install_script), "ARG_UPDATE_ON_START='true'")
+    error_message = "The install script should receive the automatic update setting."
   }
 }

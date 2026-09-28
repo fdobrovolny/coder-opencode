@@ -1,6 +1,7 @@
 #!/bin/bash
 # Derived from Coder Registry's coder-labs/opencode module and modified for this repository.
 set -euo pipefail
+umask 077
 
 ARG_WORKDIR=$(echo -n '${ARG_WORKDIR}' | base64 -d)
 ARG_WEB_PORT='${ARG_WEB_PORT}'
@@ -13,38 +14,35 @@ SERVER_LOG="$${MODULE_DIR}/logs/server.log"
 SERVER_URL="http://127.0.0.1:$${ARG_WEB_PORT}"
 mkdir -p "$${MODULE_DIR}/logs"
 
-server_ready() {
-  curl -sS -o /dev/null --max-time 1 "$${SERVER_URL}/global/health" 2> /dev/null
-}
-
-if server_ready; then
-  echo "OpenCode server is already running at $${SERVER_URL}."
-  exit 0
+# Setting a service option stops the server, even if its value is unchanged.
+# Preserve running sessions when Coder reruns the startup script.
+if [ "$(opencode service get hostname)" != "127.0.0.1" ]; then
+  opencode service set hostname 127.0.0.1
+fi
+if [ "$(opencode service get port)" != "$${ARG_WEB_PORT}" ]; then
+  opencode service set port "$${ARG_WEB_PORT}"
 fi
 
-nohup opencode serve --hostname 127.0.0.1 --port "$${ARG_WEB_PORT}" >> "$${SERVER_LOG}" 2>&1 &
-SERVER_PID=$!
+# OpenCode manages the detached process, its persistent password, and discovery.
+# Native pairing and terminal clients therefore use this same server.
+if ! opencode service start >> "$${SERVER_LOG}" 2>&1; then
+  echo "ERROR: OpenCode service failed to start. Check $${SERVER_LOG}." >&2
+  exit 1
+fi
 
-for _ in {1..30}; do
-  if server_ready; then
-    echo "OpenCode server started with PID $${SERVER_PID}. Logs: $${SERVER_LOG}"
-    exit 0
-  fi
+# /global/health is a v1 route; v2 may return the HTML shell for that path.
+# Check the authenticated v2 API and the public browser shell separately.
+OPENCODE_PASSWORD=$(opencode service get password)
+export OPENCODE_PASSWORD
+if ! opencode api --server "$${SERVER_URL}" GET /api/info > /dev/null; then
+  echo "ERROR: OpenCode API is not ready at $${SERVER_URL}." >&2
+  exit 1
+fi
+unset OPENCODE_PASSWORD
+if ! curl -fsS -o /dev/null --max-time 10 "$${SERVER_URL}/"; then
+  echo "ERROR: OpenCode web UI is not ready at $${SERVER_URL}." >&2
+  exit 1
+fi
 
-  if ! kill -0 "$${SERVER_PID}" 2> /dev/null; then
-    if wait "$${SERVER_PID}"; then
-      status=0
-    else
-      status=$?
-    fi
-    echo "ERROR: OpenCode server exited with status $${status}. Check $${SERVER_LOG}." >&2
-    exit 1
-  fi
-
-  sleep 1
-done
-
-kill "$${SERVER_PID}" 2> /dev/null || true
-wait "$${SERVER_PID}" 2> /dev/null || true
-echo "ERROR: OpenCode server did not become ready within 30 seconds. Check $${SERVER_LOG}." >&2
-exit 1
+echo "OpenCode service is ready at $${SERVER_URL}."
+echo "To sign in through Coder, run: opencode pair --url <OpenCode-Web-app-URL>"

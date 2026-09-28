@@ -63,7 +63,7 @@ variable "tui_app_display_name" {
 }
 
 variable "web_port" {
-  description = "Port on which the OpenCode web server listens."
+  description = "Port on which the workspace OpenCode v2 service listens."
   type        = number
   default     = 4096
 
@@ -102,6 +102,12 @@ variable "install_opencode" {
   default     = true
 }
 
+variable "update_on_start" {
+  description = "Whether to refresh the latest OpenCode v2 release on every workspace start. Only applies when install_opencode is true and opencode_version is latest."
+  type        = bool
+  default     = false
+}
+
 variable "opencode_version" {
   description = "The version of OpenCode to install."
   type        = string
@@ -109,7 +115,7 @@ variable "opencode_version" {
 }
 
 variable "auth_json" {
-  description = "Contents of OpenCode auth.json for non-interactive authentication."
+  description = "Legacy auth.json contents imported by OpenCode on first v2 database initialization. For existing v2 databases, use opencode auth login."
   type        = string
   default     = ""
   sensitive   = true
@@ -125,6 +131,7 @@ locals {
   workdir = var.workdir == "/" ? "/" : trimsuffix(var.workdir, "/")
   install_script = templatefile("${path.module}/scripts/install.sh.tftpl", {
     ARG_INSTALL_OPENCODE = tostring(var.install_opencode)
+    ARG_UPDATE_ON_START  = tostring(var.update_on_start)
     ARG_OPENCODE_VERSION = var.opencode_version
     ARG_WORKDIR          = base64encode(local.workdir)
     ARG_AUTH_JSON        = base64encode(var.auth_json)
@@ -171,7 +178,8 @@ resource "coder_app" "web" {
   open_in      = "tab"
 
   healthcheck {
-    url       = "http://localhost:${var.web_port}"
+    # V2 serves the sign-in shell without authentication; its API requires credentials.
+    url       = "http://localhost:${var.web_port}/"
     interval  = 3
     threshold = 20
   }
@@ -186,7 +194,11 @@ resource "coder_app" "tui" {
     set -e
     export PATH="$HOME/.opencode/bin:$PATH"
     cd "$(echo -n '${base64encode(local.workdir)}' | base64 -d)"
-    exec opencode --continue
+    %{if var.enable_web}OPENCODE_PASSWORD=$(opencode service get password)
+    export OPENCODE_PASSWORD
+    exec opencode --continue --server http://127.0.0.1:${var.web_port}
+    %{else}exec opencode --continue
+    %{endif}
   EOT
   icon         = var.icon
   order        = var.order
