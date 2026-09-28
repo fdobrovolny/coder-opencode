@@ -1,0 +1,34 @@
+#!/bin/bash
+set -euo pipefail
+
+export PATH="$${HOME}/.opencode/bin:$${PATH}"
+APP_URL=$(echo -n '${ARG_WEB_APP_URL}' | base64 -d)
+APP_SLUG='${ARG_WEB_SLUG}'
+
+if [ -z "$${APP_URL}" ]; then
+  # Coder supplies the full wildcard origin with a literal {{port}} placeholder.
+  # App slugs use the same routing format as forwarded ports.
+  PROXY_URI="$${VSCODE_PROXY_URI:-}"
+  PLACEHOLDER='{{port}}'
+  if [[ "$${PROXY_URI}" != *"$${PLACEHOLDER}"* ]]; then
+    echo "ERROR: Cannot derive the OpenCode URL from VSCODE_PROXY_URI. Set the module's web_app_url to the public OpenCode Web app origin." >&2
+    exit 1
+  fi
+  APP_URL="$${PROXY_URI//$${PLACEHOLDER}/$${APP_SLUG}}"
+fi
+APP_URL="$${APP_URL%/}"
+if [[ ! "$${APP_URL}" =~ ^https?://[^/?#[:space:]@]+$ ]] || [[ "$${APP_URL}" == *'{'* || "$${APP_URL}" == *'}'* ]]; then
+  echo "ERROR: The pairing URL must be an HTTP(S) origin. Set web_app_url to the public OpenCode Web app origin." >&2
+  exit 1
+fi
+
+# Do not let pair auto-start a different service before workspace setup finishes.
+if [ "$(opencode service status)" != "http://127.0.0.1:${ARG_WEB_PORT}" ]; then
+  echo "ERROR: The workspace OpenCode service is not ready. Wait for workspace startup to finish and reopen OpenCode Pair." >&2
+  exit 1
+fi
+
+opencode pair --url "$${APP_URL}"
+if [ -t 0 ]; then
+  read -r -p "Open the link above to sign in. Press Enter to close this terminal." || true
+fi

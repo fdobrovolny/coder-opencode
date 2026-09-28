@@ -65,10 +65,10 @@ with tempfile.TemporaryDirectory(prefix="coder-opencode-test-") as directory:
 
     def run_script(script):
         subprocess.run(["bash", "-n"], input=script, text=True, check=True)
-        subprocess.run(
+        return subprocess.run(
             ["bash"], input=script, env=env, text=True, capture_output=True,
             check=True, timeout=90,
-        )
+        ).stdout
 
     def info(password):
         token = base64.b64encode(f"opencode:{password}".encode()).decode()
@@ -120,7 +120,10 @@ with tempfile.TemporaryDirectory(prefix="coder-opencode-test-") as directory:
         # Pairing supports the external Coder origin and stays on the same service.
         external = cli("pair", "--url", "https://opencode.example.test")
         assert "https://opencode.example.test/auth/connect/" in external
-        pairing = cli("pair", "--url", url)
+        pairing = run_script(render("pair", dict(
+            ARG_WEB_APP_URL=base64.b64encode(url.encode()).decode(),
+            ARG_WEB_SLUG="opencode-web", ARG_WEB_PORT=str(port),
+        )))
         link = re.search(r"http://[^\s]+/auth/connect/[^\s]+", pairing).group()
         browser = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
         with browser.open(urllib.request.Request(link, headers={"Accept": "text/html"}), timeout=5) as response:

@@ -1,8 +1,9 @@
 # Coder OpenCode Module
 
-Install and configure [OpenCode v2](https://opencode.ai/v2/docs) in a Coder workspace. The module adds two apps to the workspace UI:
+Install and configure [OpenCode v2](https://opencode.ai/v2/docs) in a Coder workspace. The module adds three apps to the workspace UI when web support is enabled:
 
 - **OpenCode Web** opens OpenCode's browser interface through Coder's authenticated app proxy.
+- **OpenCode Pair** opens a terminal that generates a fresh browser sign-in link using the automatically derived OpenCode Web URL.
 - **OpenCode TUI** opens an interactive terminal and continues the latest session in the configured project directory, authenticated to the same server as the web app.
 
 ## Usage
@@ -64,16 +65,28 @@ Run one module instance per workspace user: it manages that user's OpenCode serv
 
 V2 requires OpenCode authentication in addition to Coder authentication. The service generates and privately stores a persistent password; the TUI reads it at runtime, so it is not embedded in Terraform state or app commands.
 
-1. Open **OpenCode Web** in Coder and copy its HTTPS URL.
-2. In a workspace terminal, run:
+1. Click **OpenCode Pair** in Coder.
+2. Open the printed link in the same browser. It signs you in and opens the web UI.
+3. Use **OpenCode Web** for subsequent visits. Reopen **OpenCode Pair** when you need a new sign-in link.
 
-   ```sh
-   opencode pair --url https://YOUR-OPENCODE-APP-HOST
-   ```
+The button derives the public app origin from Coder's `VSCODE_PROXY_URI`, replacing `{{port}}` with the `opencode-web` app slug. This preserves the supplied scheme, wildcard domain, workspace, agent, owner, and any custom port. Coder [provides this environment variable to terminals](https://github.com/coder/coder/blob/main/agent/agent.go) using its [configured wildcard app hostname](https://github.com/coder/coder/blob/main/coderd/agentapi/manifest.go). No Coder API token or extra Terraform inputs are needed for the default setup.
 
-3. Open the printed link in the same browser. It signs you in and opens the web UI.
+For a custom public origin or a regional proxy different from the supplied origin, set `web_app_url` in the module:
 
-Use the OpenCode app's subdomain URL, without a path, rather than the Coder dashboard URL or `localhost`. Pairing links are single-use and expire after five minutes. Browser sessions last 30 days; changing the service password invalidates them. Generate links when needed rather than saving them as the Coder app URL. See [OpenCode v2 browser access](https://opencode.ai/v2/docs/cli/web).
+```tf
+web_app_url           = "https://YOUR-OPENCODE-APP-HOST"
+pair_app_display_name = "OpenCode Pair" # Optional button label
+```
+
+Use the OpenCode app's origin, without a path, rather than the Coder dashboard URL or `localhost`. If the proxy environment variable is missing or invalid, the button explains how to set this override. The pairing button is omitted when `enable_web = false`.
+
+Pairing links are single-use and expire after five minutes. Browser sessions last 30 days; changing the service password invalidates them. Links are generated only when the button is clicked and are not saved in Terraform state or as the Coder app URL. See [OpenCode v2 browser access](https://opencode.ai/v2/docs/cli/web).
+
+You can also generate a link manually from a workspace terminal:
+
+```sh
+opencode pair --url https://YOUR-OPENCODE-APP-HOST
+```
 
 For a terminal connection outside the Coder TUI app, run inside the workspace:
 
@@ -131,7 +144,7 @@ The `scripts` output contains the ordered `coder exp sync` names, allowing downs
 
 ## Validation
 
-Run `terraform fmt -check -recursive`, `terraform validate`, `terraform test`, and `python3 tests/test_install.py`. The installation policy tests use a mock installer and do not access the network. With OpenCode v2 installed, `python3 tests/smoke_v2.py` tests startup, API authentication, repeated startup, and browser pairing in a temporary home without using your provider credentials. Add `--install-version 2.0.18` to also download that version and test the upgrade from a simulated v1 installation.
+Run `terraform fmt -check -recursive`, `terraform validate`, `terraform test`, `python3 tests/test_install.py`, and `python3 tests/test_pair.py`. The installation policy and pairing URL tests use mocks and do not access the network. With OpenCode v2 installed, `python3 tests/smoke_v2.py` tests startup, API authentication, repeated startup, and browser pairing in a temporary home without using your provider credentials. Add `--install-version 2.0.18` to also download that version and test the upgrade from a simulated v1 installation.
 
 ## Attribution
 

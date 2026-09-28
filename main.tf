@@ -23,7 +23,7 @@ variable "order" {
 }
 
 variable "group" {
-  description = "The name of the Coder app group that both OpenCode apps belong to."
+  description = "The name of the Coder app group that the OpenCode apps belong to."
   type        = string
   default     = null
 }
@@ -50,8 +50,25 @@ variable "web_app_display_name" {
   default     = "OpenCode Web"
 }
 
+variable "pair_app_display_name" {
+  description = "Display name for the terminal app that generates an OpenCode browser pairing link."
+  type        = string
+  default     = "OpenCode Pair"
+}
+
+variable "web_app_url" {
+  description = "Optional public OpenCode app origin for pairing, such as https://opencode.example.com. By default it is derived from Coder's VSCODE_PROXY_URI at runtime."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.web_app_url == "" || can(regex("^https?://[^/?#[:space:]@]+/?$", var.web_app_url))
+    error_message = "web_app_url must be empty or an HTTP(S) origin without credentials, a path, query, or fragment."
+  }
+}
+
 variable "enable_web" {
-  description = "Whether to create the OpenCode web app and start its server."
+  description = "Whether to create the OpenCode web and pairing apps and start their server."
   type        = bool
   default     = true
 }
@@ -183,6 +200,23 @@ resource "coder_app" "web" {
     interval  = 3
     threshold = 20
   }
+}
+
+resource "coder_app" "pair" {
+  count = var.enable_web ? 1 : 0
+
+  agent_id     = var.agent_id
+  slug         = "opencode-pair"
+  display_name = var.pair_app_display_name
+  command = templatefile("${path.module}/scripts/pair.sh.tftpl", {
+    ARG_WEB_APP_URL = base64encode(var.web_app_url)
+    ARG_WEB_SLUG    = coder_app.web[0].slug
+    ARG_WEB_PORT    = tostring(var.web_port)
+  })
+  icon    = var.icon
+  order   = var.order
+  group   = var.group
+  open_in = "slim-window"
 }
 
 resource "coder_app" "tui" {

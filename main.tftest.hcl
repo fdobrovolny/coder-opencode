@@ -56,6 +56,16 @@ run "defaults_are_correct" {
   }
 
   assert {
+    condition     = coder_app.pair[0].display_name == "OpenCode Pair" && coder_app.pair[0].agent_id == "test-agent" && coder_app.pair[0].open_in == "slim-window"
+    error_message = "The pairing button should open a workspace terminal."
+  }
+
+  assert {
+    condition     = strcontains(coder_app.pair[0].command, "VSCODE_PROXY_URI") && strcontains(coder_app.pair[0].command, "APP_SLUG='opencode-web'")
+    error_message = "Pairing should derive the URL for the web app slug at runtime."
+  }
+
+  assert {
     condition     = coder_app.tui.display_name == "OpenCode TUI"
     error_message = "The default terminal app display name should be OpenCode TUI."
   }
@@ -100,15 +110,17 @@ run "custom_app_configuration" {
   command = plan
 
   variables {
-    agent_id             = "test-agent"
-    workdir              = "/home/coder/project/"
-    web_port             = 8080
-    web_app_display_name = "OpenCode Browser"
-    tui_app_display_name = "OpenCode Terminal"
-    subdomain            = true
-    order                = 10
-    group                = "AI Tools"
-    icon                 = "/custom/opencode.svg"
+    agent_id              = "test-agent"
+    workdir               = "/home/coder/project/"
+    web_port              = 8080
+    web_app_display_name  = "OpenCode Browser"
+    tui_app_display_name  = "OpenCode Terminal"
+    pair_app_display_name = "Connect Browser"
+    web_app_url           = "https://opencode.example.com"
+    subdomain             = true
+    order                 = 10
+    group                 = "AI Tools"
+    icon                  = "/custom/opencode.svg"
   }
 
   assert {
@@ -134,6 +146,16 @@ run "custom_app_configuration" {
   assert {
     condition     = coder_app.web[0].subdomain && coder_app.web[0].order == 10 && coder_app.web[0].group == "AI Tools"
     error_message = "The web app should use the configured UI options."
+  }
+
+  assert {
+    condition     = coder_app.pair[0].display_name == "Connect Browser" && coder_app.pair[0].group == "AI Tools" && coder_app.pair[0].order == 10 && coder_app.pair[0].icon == "/custom/opencode.svg"
+    error_message = "The pairing app should respect the configured UI options."
+  }
+
+  assert {
+    condition     = strcontains(coder_app.pair[0].command, base64encode("https://opencode.example.com")) && strcontains(coder_app.pair[0].command, "http://127.0.0.1:8080")
+    error_message = "Pairing should respect the public URL override and configured server port."
   }
 
   assert {
@@ -226,8 +248,8 @@ run "web_can_be_disabled" {
   }
 
   assert {
-    condition     = length(coder_app.web) == 0
-    error_message = "The web app should not be created when web support is disabled."
+    condition     = length(coder_app.web) == 0 && length(coder_app.pair) == 0
+    error_message = "The web and pairing apps should not be created when web support is disabled."
   }
 
   assert {
@@ -259,4 +281,16 @@ run "automatic_updates_can_be_enabled" {
     condition     = strcontains(nonsensitive(local.install_script), "ARG_UPDATE_ON_START='true'")
     error_message = "The install script should receive the automatic update setting."
   }
+}
+
+run "invalid_pairing_origin" {
+  command = plan
+
+  variables {
+    agent_id    = "test-agent"
+    workdir     = "/home/coder/project"
+    web_app_url = "https://example.com/path"
+  }
+
+  expect_failures = [var.web_app_url]
 }
