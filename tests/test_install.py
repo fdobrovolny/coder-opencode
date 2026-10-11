@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class InstallPolicy(unittest.TestCase):
-    def run_case(self, *, update=False, install=True, requested="latest", current="2.0.18", latest="2.0.19", fail=False, metadata=None, metadata_fail=False, installer_fail=False):
+    def run_case(self, *, update=False, install=True, requested="latest", current="2.0.18", latest="2.0.19", fail=False, metadata=None, metadata_fail=False, installer_fail=False, api_metadata=None, api_fail=False):
         with tempfile.TemporaryDirectory(prefix="opencode-install-test-") as directory:
             home = Path(directory)
             bin_dir = home / ".opencode/bin"
@@ -33,8 +33,12 @@ esac
             curl.write_text('''#!/bin/bash
 printf '%s\\n' "$*" >> "$HOME/downloads"
 if [[ "$*" == *https://opencode.ai/update/* ]]; then
-  echo 'curl: (22) The requested URL returned error: 500' >&2
-  exit 22
+  if [ "$MOCK_API_FAIL" = true ]; then
+    echo 'curl: (22) The requested URL returned error: 500' >&2
+    exit 22
+  fi
+  printf '%s\\n' "$MOCK_API_METADATA"
+  exit 0
 fi
 if [[ "$*" == *https://registry.npmjs.org/@opencode%2fcli/latest* ]]; then
   if [ "$MOCK_METADATA_FAIL" = true ]; then exit 22; fi
@@ -90,6 +94,8 @@ esac
                 MOCK_METADATA=metadata if metadata is not None else json.dumps({"version": latest}),
                 MOCK_METADATA_FAIL=str(metadata_fail).lower(),
                 MOCK_INSTALLER_FAIL=str(installer_fail).lower(),
+                MOCK_API_METADATA=api_metadata if api_metadata is not None else json.dumps({"version": latest}),
+                MOCK_API_FAIL=str(api_fail).lower(),
             )
             result = subprocess.run(["bash"], input=script, text=True, capture_output=True, env=env, timeout=10)
             def read(name):
@@ -104,8 +110,8 @@ esac
         code, version, downloads, args, stops = self.run_case(update=True)
         self.assertEqual((code, version, stops), (0, "2.0.19", "stop\n"))
         self.assertIn("https://opencode.ai/v2/install", downloads)
-        self.assertIn("https://registry.npmjs.org/@opencode%2fcli/latest", downloads)
-        self.assertNotIn("https://opencode.ai/update/", downloads)
+        self.assertIn("--retry 3 --connect-timeout 10 --max-time 60 https://opencode.ai/update/api/latest/cli/npm", downloads)
+        self.assertNotIn("registry.npmjs.org", downloads)
         self.assertEqual(args, "--no-modify-path --version 2.0.19\n")
 
     def test_unchanged_latest_keeps_service(self):
@@ -124,6 +130,7 @@ esac
         self.assertEqual((code, version, stops), (0, "2.0.17", "stop\n"))
         self.assertEqual(args, "--no-modify-path --version 2.0.17\n")
         self.assertNotIn("registry.npmjs.org", downloads)
+        self.assertNotIn("https://opencode.ai/update/", downloads)
 
     def test_installer_failure_fails_without_stopping_service(self):
         code, version, downloads, _, stops = self.run_case(update=True, fail=True)
@@ -131,18 +138,19 @@ esac
         self.assertEqual((version, stops), ("2.0.18", ""))
         self.assertTrue(downloads)
 
-    def test_latest_installs_without_update_api_on_fresh_workspace(self):
-        code, version, downloads, args, stops = self.run_case(current="")
+    def test_latest_installs_with_npm_fallback_on_fresh_workspace(self):
+        code, version, downloads, args, stops = self.run_case(current="", api_fail=True)
         self.assertEqual((code, version, stops), (0, "2.0.19", ""))
         self.assertEqual(args, "--no-modify-path --version 2.0.19\n")
-        self.assertNotIn("https://opencode.ai/update/", downloads)
+        self.assertIn("https://opencode.ai/update/", downloads)
+        self.assertIn("https://registry.npmjs.org/@opencode%2fcli/latest", downloads)
 
     def test_latest_upgrades_v1(self):
         code, version, _, _, stops = self.run_case(current="1.18.33")
         self.assertEqual((code, version, stops), (0, "2.0.19", "stop\n"))
 
     def test_metadata_failure_fails_before_installing(self):
-        code, version, downloads, args, stops = self.run_case(update=True, metadata_fail=True)
+        code, version, downloads, args, stops = self.run_case(update=True, api_fail=True, metadata_fail=True)
         self.assertNotEqual(code, 0)
         self.assertEqual((version, args, stops), ("2.0.18", "", ""))
         self.assertNotIn("https://opencode.ai/v2/install", downloads)
@@ -150,7 +158,7 @@ esac
     def test_invalid_metadata_fails_before_installing(self):
         for metadata in ('{}', '{"version":"1.2.3"}', '{"version":"2.0.19-beta.1"}', '{"version":"garbage"}'):
             with self.subTest(metadata=metadata):
-                code, version, downloads, args, stops = self.run_case(update=True, metadata=metadata)
+                code, version, downloads, args, stops = self.run_case(update=True, api_fail=True, metadata=metadata)
                 self.assertNotEqual(code, 0)
                 self.assertEqual((version, args, stops), ("2.0.18", "", ""))
                 self.assertNotIn("https://opencode.ai/v2/install", downloads)
@@ -160,6 +168,30 @@ esac
         self.assertNotEqual(code, 0)
         self.assertEqual((version, stops), ("2.0.18", ""))
         self.assertTrue(args)
+
+    def test_update_api_version_takes_priority_over_npm(self):
+        code, version, downloads, args, stops = self.run_case(
+            update=True, api_metadata='{"version":"2.0.20"}', metadata_fail=True,
+        )
+        self.assertEqual((code, version, stops), (0, "2.0.20", "stop\n"))
+        self.assertEqual(args, "--no-modify-path --version 2.0.20\n")
+        self.assertNotIn("registry.npmjs.org", downloads)
+
+    def test_update_api_outage_falls_back_to_npm(self):
+        code, version, downloads, args, stops = self.run_case(update=True, api_fail=True)
+        self.assertEqual((code, version, stops), (0, "2.0.19", "stop\n"))
+        self.assertEqual(args, "--no-modify-path --version 2.0.19\n")
+        requests = downloads.splitlines()
+        self.assertIn("https://opencode.ai/update/api/latest/cli/npm", requests[0])
+        self.assertIn("https://registry.npmjs.org/@opencode%2fcli/latest", requests[1])
+        self.assertIn("https://opencode.ai/v2/install", requests[2])
+
+    def test_invalid_update_api_metadata_falls_back_to_npm(self):
+        for metadata in ('{}', '{"version":"1.2.3"}', '{"version":"garbage"}'):
+            with self.subTest(metadata=metadata):
+                code, version, downloads, _, stops = self.run_case(update=True, api_metadata=metadata)
+                self.assertEqual((code, version, stops), (0, "2.0.19", "stop\n"))
+                self.assertIn("https://registry.npmjs.org/@opencode%2fcli/latest", downloads)
 
 
 if __name__ == "__main__":

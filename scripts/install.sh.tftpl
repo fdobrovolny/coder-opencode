@@ -28,15 +28,23 @@ if [ "$${ARG_INSTALL_OPENCODE}" = "true" ] && {
 }; then
   printf 'Installing OpenCode %s...\n' "$${ARG_OPENCODE_VERSION}"
   if [ "$${REQUESTED_VERSION}" = "latest" ]; then
-    # The upstream installer uses an update API that can return HTTP 500.
-    # Resolve the official npm release and pass a version to bypass that API.
-    if ! METADATA=$(curl -fsSL --retry 3 --connect-timeout 10 --max-time 60 https://registry.npmjs.org/@opencode%2fcli/latest); then
-      echo "ERROR: Failed to fetch the latest OpenCode version from npm." >&2
-      exit 1
-    fi
-    REQUESTED_VERSION=$(printf '%s\n' "$${METADATA}" | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
-    if [[ ! "$${REQUESTED_VERSION}" =~ ^([2-9]|[1-9][0-9]+)\.[0-9]+\.[0-9]+$ ]]; then
-      echo "ERROR: npm did not return a valid stable OpenCode v2 version." >&2
+    # Retry the official update API, then fall back to the official npm package.
+    # Pass the resolved version so the installer does not repeat the lookup.
+    REQUESTED_VERSION=""
+    for VERSION_URL in https://opencode.ai/update/api/latest/cli/npm https://registry.npmjs.org/@opencode%2fcli/latest; do
+      if METADATA=$(curl -fsSL --retry 3 --connect-timeout 10 --max-time 60 "$${VERSION_URL}"); then
+        CANDIDATE_VERSION=$(printf '%s\n' "$${METADATA}" | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+        if [[ "$${CANDIDATE_VERSION}" =~ ^([2-9]|[1-9][0-9]+)\.[0-9]+\.[0-9]+$ ]]; then
+          REQUESTED_VERSION="$${CANDIDATE_VERSION}"
+          break
+        fi
+      fi
+      if [ "$${VERSION_URL}" = "https://opencode.ai/update/api/latest/cli/npm" ]; then
+        echo "WARNING: OpenCode update API lookup failed; falling back to npm." >&2
+      fi
+    done
+    if [ -z "$${REQUESTED_VERSION}" ]; then
+      echo "ERROR: Failed to resolve a valid stable OpenCode v2 version from the update API or npm." >&2
       exit 1
     fi
   fi
