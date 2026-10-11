@@ -115,7 +115,7 @@ module "opencode" {
 }
 ```
 
-`update_on_start` defaults to `false`. It has no effect when installation is disabled or a specific version is pinned. When enabled with `latest`, startup runs the v2 installer each time and requires network access; an installer failure fails the install step. If the binary version changes, the old managed service is stopped so the startup script or next terminal client starts the new version. An unchanged version keeps its running service.
+`update_on_start` defaults to `false`. It has no effect when installation is disabled or a specific version is pinned. When enabled with `latest`, startup runs the v2 installer each time and requires network access; an installer failure fails the install step. The module resolves `latest` from the official `@opencode/cli` package on npm and passes that version to the installer, bypassing the upstream update API's version lookup. Version and installer downloads retry transient failures. If the binary version changes, the old managed service is stopped so the startup script or next terminal client starts the new version. An unchanged version keeps its running service.
 
 Stop any old standalone `opencode serve` or `opencode web` process before migrating a running workspace, or restart the workspace to clear it. The new managed service cannot take over a port occupied by an old process. Provider `auth_json` contains provider credentials; it is separate from the server password and browser pairing.
 

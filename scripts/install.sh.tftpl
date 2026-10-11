@@ -27,10 +27,22 @@ if [ "$${ARG_INSTALL_OPENCODE}" = "true" ] && {
   { [ "$${REQUESTED_VERSION}" != "latest" ] && [ "$${INSTALLED_VERSION}" != "$${REQUESTED_VERSION}" ]; }
 }; then
   printf 'Installing OpenCode %s...\n' "$${ARG_OPENCODE_VERSION}"
-  if [ "$${ARG_OPENCODE_VERSION}" = "latest" ]; then
-    curl -fsSL https://opencode.ai/v2/install | bash -s -- --no-modify-path
-  else
-    curl -fsSL https://opencode.ai/v2/install | bash -s -- --no-modify-path --version "$${ARG_OPENCODE_VERSION}"
+  if [ "$${REQUESTED_VERSION}" = "latest" ]; then
+    # The upstream installer uses an update API that can return HTTP 500.
+    # Resolve the official npm release and pass a version to bypass that API.
+    if ! METADATA=$(curl -fsSL --retry 3 --connect-timeout 10 --max-time 60 https://registry.npmjs.org/@opencode%2fcli/latest); then
+      echo "ERROR: Failed to fetch the latest OpenCode version from npm." >&2
+      exit 1
+    fi
+    REQUESTED_VERSION=$(printf '%s\n' "$${METADATA}" | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+    if [[ ! "$${REQUESTED_VERSION}" =~ ^([2-9]|[1-9][0-9]+)\.[0-9]+\.[0-9]+$ ]]; then
+      echo "ERROR: npm did not return a valid stable OpenCode v2 version." >&2
+      exit 1
+    fi
+  fi
+  if ! curl -fsSL --retry 3 --connect-timeout 10 --max-time 60 https://opencode.ai/v2/install | bash -s -- --no-modify-path --version "$${REQUESTED_VERSION}"; then
+    echo "ERROR: OpenCode installation failed." >&2
+    exit 1
   fi
   hash -r
 fi
